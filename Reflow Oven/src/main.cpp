@@ -5,9 +5,9 @@
 #include "Adafruit_ILI9341.h"
 #include "InterpolationLib.h"
 
-#define THERMO_DAT 12
-#define THERMO_CLK 13
-#define THERMO_CS 10
+#define THERMO_DAT 26
+#define THERMO_CLK 27
+#define THERMO_CS 28
 
 #define TFT_DC 22
 #define TFT_CS 21
@@ -41,7 +41,7 @@ const float maxTemperature[] = {210.0, 235.0};
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCK, TFT_RST, TFT_MISO);
 
-MAX6675 thermoCouple(THERMO_CS, &SPI);
+MAX6675 thermoCouple(THERMO_CS, THERMO_DAT, THERMO_CLK);
 float temperature = 0;
 
 #define READ_DELAY 250    // time to wait in between thermocouple reads
@@ -94,7 +94,7 @@ void setup()
   Serial.println();
 
   thermoCouple.setSPIspeed(4000000);
-  thermoCouple.setOffset(273);
+  thermoCouple.setOffset(0);
   int status = thermoCouple.read();
   if (status != 0)
   {
@@ -227,6 +227,7 @@ void loop()
 {
   if (millis() > lastRead + READ_DELAY)
   {
+    thermoCouple.read();
     temperature = thermoCouple.getCelsius();
     targetTemperature = getTargetTemp();
     if (temperature > targetTemperature)
@@ -237,7 +238,7 @@ void loop()
     {
       stageDone = false;
       currentStage++;
-      if (currentStage == arrayLen - 1)
+      if (currentStage >= arrayLen - 1 && (millis() - startTime) / 1000 >= timerange[1])
       {
         finishedReflow();
       }
@@ -261,7 +262,9 @@ void loop()
     Serial.print("\tTarget: ");
     Serial.print(targetTemperature);
     Serial.print("\tStage: ");
-    Serial.println(currentStage);
+    Serial.print(currentStage);
+    Serial.print("\t");
+    Serial.println(switchState);
   }
 
   // if enough time has passed since the last time we switched AND a switch is needed, make it
@@ -287,9 +290,11 @@ void loop()
 void finishedReflow()
 {
   digitalWrite(RELAYPIN, LOW);
+  tft.fillRect(0, SCREEN_HEIGHT - TEXT_HEIGHT, SCREEN_WIDTH, TEXT_HEIGHT, ILI9341_BLACK);
   tft.setCursor(0, SCREEN_HEIGHT - TEXT_HEIGHT);
-  tft.print("Done in: ");
+  tft.print("Done! ");
   tft.print((millis() - startTime) / 1000);
+  tft.print("s");
   while (1)
   {
   }
