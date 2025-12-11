@@ -41,18 +41,17 @@ double temps[] = {25, 100, 150, 183, 235, 183, 25}; // interpolation requires th
 const float maxTemperature[] = {210.0, 235.0};      // time of the max temp, max temperature
 
 // Adafruit's EZ Make Oven Settings
-// const float timerange[] = {0.0, 340.0};
-// const float temprange[] = {30.0, 240.0};
+// const float timerange[] = {0.0, 340.0};                                          // min time, max time
+// const float temprange[] = {30.0, 240.0};                                         // min temperature, max temperature
 // double times[] = {0, 20, 30, 40, 110, 120, 130, 150, 200, 210, 220, 240, 340};   // interpolation requires this to be a non-constant double
 // double temps[] = {30, 90, 100, 110, 140, 150, 150, 183, 230, 235, 240, 183, 50}; // interpolation requires this to be a non-constant double
-// const float maxTemperature[] = {210.0, 240.0};
+// const float maxTemperature[] = {210.0, 240.0};                                   // time of the max temp, max temperature
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCK, TFT_RST, TFT_MISO);
 
 MAX6675 thermoCouple(THERMO_CS, THERMO_DAT, THERMO_CLK);
 float temperature = 0;
 
-#define READ_DELAY 250    // time to wait in between thermocouple reads
 #define SWITCH_DELAY 1000 // time to wait in between relay switching
 
 // calculate some constants based on the defined constants above
@@ -69,9 +68,6 @@ unsigned long int startTime; // time of reflow start
 // bool switchState = false; // state of relay (true =  on)
 int currentStage = 1;
 bool stageDone = false;
-
-const char *currentTemperatureChar[5];
-const char *targetTemperatureChar[5];
 
 void finishedReflow();
 float getTargetTemp(int futureTime = 0);
@@ -156,7 +152,7 @@ void setup()
   for (int i = 0; i < SCREEN_WIDTH; i++)
   {
     interpolatedPoint = Interpolation::ConstrainedSpline(times, temps, arrayLen, secondsPerPixel * i);
-    tft.drawPixel(i, zeroY - (interpolatedPoint - temprange[0]) * PpDY, ILI9341_CYAN);
+    tft.drawPixel(i, zeroY - (interpolatedPoint - temprange[0]) * PpDY, ILI9341_YELLOW);
   }
 
   // draw the divider line and add text
@@ -204,29 +200,6 @@ void setup()
     tft.print(temperature);
   }
 
-  // temperature = thermoCouple.getCelsius();
-
-  // // if you're somehow below room temp, bring it up to room temp before starting the clock
-  // if (temperature < temps[0])
-  // {
-  //   tft.print("Below Room Temp...");
-  //   digitalWrite(RELAYPIN, HIGH);
-  //   switchState = true;
-  //   lastSwitch = millis();
-  //   temperature = thermoCouple.getCelsius();
-  //   delay(READ_DELAY);
-  // }
-
-  // targetTemperature = temps[1];
-  // if (temperature < targetTemperature)
-  // {
-  //   digitalWrite(RELAYPIN, HIGH);
-  //   switchState = true;
-  //   lastSwitch = millis();
-  // }
-
-  // lastRead = millis();
-
   // we're good to go!
   tft.fillRect(0, SCREEN_HEIGHT - TEXT_HEIGHT, SCREEN_WIDTH, TEXT_HEIGHT, ILI9341_BLACK);
   tft.setCursor(0, SCREEN_HEIGHT - TEXT_HEIGHT);
@@ -254,11 +227,6 @@ void loop()
     }
   }
 
-  // if (temperature > maxTemperature[1] && millis() - startTime > maxTemperature[0])
-  // {
-  //   finishedReflow();
-  // }
-
   // show the temperatures on the screen
   tft.setCursor(5 * .6 * TEXT_HEIGHT, SCREEN_HEIGHT - TEXT_HEIGHT);
   tft.print(temperature);
@@ -272,7 +240,7 @@ void loop()
   // this is mildly inefficient but the RP2040 has more than enough oomph
   tft.setCursor(0, SCREEN_HEIGHT - TEXT_HEIGHT);
   tft.print((millis() - startTime) / 1000);
-  tft.drawPixel((millis() - startTime) / 1000 * PpSX, zeroY - (temperature - temprange[0]) * PpDY, isSwitchOn ? ILI9341_GREEN : ILI9341_RED);
+  tft.drawPixel((millis() - startTime) / 1000 * PpSX, zeroY - (temperature - temprange[0]) * PpDY, isSwitchOn ? ILI9341_ORANGE : ILI9341_BLUE);
 
 // also print it to serial for debug purposes
 #if (DEBUG)
@@ -300,7 +268,7 @@ void finishedReflow()
   {
     thermoCouple.read();
     temperature = thermoCouple.getCelsius();
-    tft.drawPixel((millis() - startTime) / 1000 * PpSX, zeroY - (temperature - temprange[0]) * PpDY, ILI9341_RED);
+    tft.drawPixel((millis() - startTime) / 1000 * PpSX, zeroY - (temperature - temprange[0]) * PpDY, ILI9341_BLUE);
     delay(1.0 / PpSX * 500); // run every half of the pixel interval to ensure every point gets logged
   }
 }
@@ -330,28 +298,24 @@ bool setRelay(bool holdTemp, int tempToHold)
   bool isHeatNeeded = false;
   int targetTemp;
 
-  if (holdTemp)
+  for (int i = 0; i < CALIBRATE_SECONDS; i += 5)
   {
-    targetTemp = tempToHold;
-    if (temperature < targetTemp)
+    if (holdTemp)
     {
-      isHeatNeeded = true;
+      targetTemp = tempToHold;
     }
-  }
-  else
-  {
-    for (int i = 0; i < CALIBRATE_SECONDS; i += 5)
+    else
     {
       targetTemp = getTargetTemp(i);
+    }
 
-      // Add calibration offset for future prediction
-      float predictedTemp = temperature + (CALIBRATE_TEMP * i / CALIBRATE_SECONDS);
+    // Add calibration offset for future prediction
+    float predictedTemp = temperature + (CALIBRATE_TEMP * i / CALIBRATE_SECONDS);
 
-      if (predictedTemp < targetTemp)
-      {
-        isHeatNeeded = true;
-        break;
-      }
+    if (predictedTemp < targetTemp)
+    {
+      isHeatNeeded = true;
+      break;
     }
   }
 
